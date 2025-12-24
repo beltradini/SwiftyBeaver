@@ -181,9 +181,7 @@ open class SwiftyBeaver {
         let destinations = queue.sync { self.destinations }
         for dest in destinations {
 
-            guard let queue = dest.queue else {
-                continue
-            }
+            let queue = dest.queue
 
             resolvedMessage = resolvedMessage == nil && dest.hasMessageFilters() ? "\(message())" : resolvedMessage
             if dest.shouldLevelBeLogged(level, path: file, function: function, message: resolvedMessage) {
@@ -211,9 +209,8 @@ open class SwiftyBeaver {
         let grp = DispatchGroup()
         let destinations = queue.sync { self.destinations }
         for dest in destinations {
-            guard let queue = dest.queue else {
-                continue
-            }
+            let queue = dest.queue
+            
             grp.enter()
             if dest.asynchronously {
                 queue.async {

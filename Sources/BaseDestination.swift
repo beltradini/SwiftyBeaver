@@ -94,13 +94,13 @@ open class BaseDestination: Hashable, Equatable {
 
     // each destination instance must have an own serial queue to ensure serial output
     // GCD gives it a prioritization between User Initiated and Utility
-    var queue: DispatchQueue? //dispatch_queue_t?
+    let queue: DispatchQueue
     var debugPrint = false // set to true to debug the internal filter logic of the class
 
     public init() {
-        let uuid = NSUUID().uuidString
-        let queueLabel = "swiftybeaver-queue-" + uuid
-        queue = DispatchQueue(label: queueLabel, target: queue)
+        let uuid = UUID().uuidString
+        let queueLabel = "swiftybeaver-queue-\(uuid)" 
+        queue = DispatchQueue(label: queueLabel, qos: .utility)
     }
 
     /// send / store the formatted log message to the destination
@@ -120,9 +120,6 @@ open class BaseDestination: Hashable, Equatable {
     }
 
     public func execute(synchronously: Bool, block: @escaping () -> Void) {
-        guard let queue = queue else {
-            fatalError("Queue not set")
-        }
         if synchronously {
             queue.sync(execute: block)
         } else {
@@ -131,9 +128,6 @@ open class BaseDestination: Hashable, Equatable {
     }
 
     public func executeSynchronously<T>(block: @escaping () throws -> T) rethrows -> T {
-        guard let queue = queue else {
-            fatalError("Queue not set")
-        }
         return try queue.sync(execute: block)
     }
 

@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        swift-version: [ '5.9' ]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Swift
+        uses: fwal/setup-swift@v1
+        with:
+          swift-version: ${{ matrix.swift-version }}
+
+      - name: Show swift version
+        run: swift --version
+
+      - name: Build
+        run: swift build --configuration debug
+
+      - name: Test
+        run: swift test --parallel
+
+      - name: Run docker tests (Linux only)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          if [ -x "./test_in_docker.sh" ]; then
+            ./test_in_docker.sh
+          else
+            echo "No docker test script found or not executable"
+          fi

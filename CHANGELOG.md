@@ -6,6 +6,13 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ---
 <br/>
 
+## Unreleased
+
+##### Fixed
+- Make `BaseDestination.queue` non-optional to avoid potential crashes when the queue was missing; added concurrency stress tests and CI workflow covering macOS and Ubuntu.
+
+<br/>
+
 ## 2.1.1 (2024-05-20)
 
 ##### Changed

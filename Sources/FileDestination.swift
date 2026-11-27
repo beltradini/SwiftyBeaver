@@ -170,50 +170,18 @@ open class FileDestination: BaseDestination {
     }
 
     private func write(data: Data, to url: URL) -> Bool {
-        
+
         #if os(Linux)
-            return true
+            // NSFileCoordinator is not implemented in swift-corelib-foundation,
+            // so the append is done directly. File locking is not needed here
+            // because each destination writes on its own serial queue.
+            return append(data: data, to: url)
         #else
         var success = false
         let coordinator = NSFileCoordinator(filePresenter: nil)
         var error: NSError?
         coordinator.coordinate(writingItemAt: url, error: &error) { url in
-            do {
-                if fileManager.fileExists(atPath: url.path) == false {
-
-                    let directoryURL = url.deletingLastPathComponent()
-                    if fileManager.fileExists(atPath: directoryURL.path) == false {
-                        try fileManager.createDirectory(
-                            at: directoryURL,
-                            withIntermediateDirectories: true
-                        )
-                    }
-                    fileManager.createFile(atPath: url.path, contents: nil)
-
-                    #if os(iOS) || os(watchOS)
-                    if #available(iOS 10.0, watchOS 3.0, *) {
-                        var attributes = try fileManager.attributesOfItem(atPath: url.path)
-                        attributes[FileAttributeKey.protectionKey] = FileProtectionType.none
-                        try fileManager.setAttributes(attributes, ofItemAtPath: url.path)
-                    }
-                    #endif
-                }
-
-                let fileHandle = try FileHandle(forWritingTo: url)
-                fileHandle.seekToEndOfFile()
-                if #available(iOS 13.4, watchOS 6.2, tvOS 13.4, macOS 10.15.4, *) {
-                    try fileHandle.write(contentsOf: data)
-                } else {
-                    fileHandle.write(data)
-                }
-                if syncAfterEachWrite {
-                    fileHandle.synchronizeFile()
-                }
-                fileHandle.closeFile()
-                success = true
-            } catch {
-                print("SwiftyBeaver File Destination could not write to file \(url).")
-            }
+            success = append(data: data, to: url)
         }
 
         if let error = error {
@@ -223,6 +191,62 @@ open class FileDestination: BaseDestination {
 
         return success
         #endif
+    }
+
+    /// creates the log file including its parent directory if needed
+    /// and appends the data to it.
+    /// returns boolean about success
+    private func append(data: Data, to url: URL) -> Bool {
+        do {
+            if fileManager.fileExists(atPath: url.path) == false {
+
+                let directoryURL = url.deletingLastPathComponent()
+                if fileManager.fileExists(atPath: directoryURL.path) == false {
+                    try fileManager.createDirectory(
+                        at: directoryURL,
+                        withIntermediateDirectories: true
+                    )
+                }
+                #if os(Linux)
+                    // logs may contain sensitive data, so they are not
+                    // world-readable like other files in /var/cache
+                    fileManager.createFile(atPath: url.path, contents: nil,
+                                           attributes: [.posixPermissions: 0o600])
+                #else
+                    fileManager.createFile(atPath: url.path, contents: nil)
+                #endif
+
+                #if os(iOS) || os(watchOS)
+                if #available(iOS 10.0, watchOS 3.0, *) {
+                    var attributes = try fileManager.attributesOfItem(atPath: url.path)
+                    attributes[FileAttributeKey.protectionKey] = FileProtectionType.none
+                    try fileManager.setAttributes(attributes, ofItemAtPath: url.path)
+                }
+                #endif
+            }
+
+            let fileHandle = try FileHandle(forWritingTo: url)
+            // deferred so the descriptor is also released when a write throws
+            defer { fileHandle.closeFile() }
+            fileHandle.seekToEndOfFile()
+            #if os(Linux)
+                // FileHandle.write(contentsOf:) is unavailable on older Swift releases
+                fileHandle.write(data)
+            #else
+                if #available(iOS 13.4, watchOS 6.2, tvOS 13.4, macOS 10.15.4, *) {
+                    try fileHandle.write(contentsOf: data)
+                } else {
+                    fileHandle.write(data)
+                }
+            #endif
+            if syncAfterEachWrite {
+                fileHandle.synchronizeFile()
+            }
+            return true
+        } catch {
+            print("SwiftyBeaver File Destination could not write to file \(url).")
+            return false
+        }
     }
 
     /// deletes log file.

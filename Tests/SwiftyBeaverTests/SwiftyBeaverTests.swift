@@ -317,6 +317,33 @@ class SwiftyBeaverTests: XCTestCase {
         log.verbose(longRunningTask())
     }
 
+    func testMessageIsEvaluatedOnlyOnceAcrossDestinations() {
+        let log = SwiftyBeaver.self
+
+        let dest1 = MockDestination()
+        dest1.asynchronously = false
+        dest1.hasMsgFilters = false
+        let dest2 = MockDestination()
+        dest2.asynchronously = false
+        dest2.hasMsgFilters = false
+
+        log.addDestination(dest1)
+        log.addDestination(dest2)
+
+        var evaluationCount = 0
+        func expensiveMessage() -> String {
+            evaluationCount += 1
+            return "Message"
+        }
+
+        log.dispatch_send(level: .warning, message: expensiveMessage(), thread: "Thread",
+                          file: "File", function: "Function()", line: 123, context: nil)
+
+        XCTAssertEqual(evaluationCount, 1)
+        XCTAssertEqual(dest1.didSendMessage, "Message")
+        XCTAssertEqual(dest2.didSendMessage, "Message")
+    }
+
     func testVersionAndBuild() {
         XCTAssertGreaterThan(SwiftyBeaver.version.length, 4)
         XCTAssertGreaterThan(SwiftyBeaver.build, 500)
@@ -401,6 +428,8 @@ class SwiftyBeaverTests: XCTestCase {
         ("testAutoClosure", testAutoClosure),
         ("testLongRunningTaskIsNotExecutedWhenLoggingUnderMinLevel",
             testLongRunningTaskIsNotExecutedWhenLoggingUnderMinLevel),
+        ("testMessageIsEvaluatedOnlyOnceAcrossDestinations",
+            testMessageIsEvaluatedOnlyOnceAcrossDestinations),
         ("testVersionAndBuild", testVersionAndBuild),
         ("testStripParams", testStripParams),
         //("testGetCorrectThread", testGetCorrectThread) // incorrect on Linux
@@ -440,8 +469,9 @@ private class MockDestination: BaseDestination {
         return true
     }
 
+    var hasMsgFilters = true
     override func hasMessageFilters() -> Bool {
-        return true
+        return hasMsgFilters
     }
 }
 

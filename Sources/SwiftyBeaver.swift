@@ -177,27 +177,35 @@ open class SwiftyBeaver {
     /// internal helper which dispatches send to dedicated queue if minLevel is ok
     class func dispatch_send(level: SwiftyBeaver.Level, message: @autoclosure () -> Any,
         thread: String, file: String, function: String, line: Int, context: Any?) {
-        var resolvedMessage: String?
-        let destinations = queue.sync { self.destinations }
-        for dest in destinations {
+        // withoutActuallyEscaping is safe here because the LazyMessage box
+        // cannot outlive this function's scope
+        withoutActuallyEscaping(message) { message in
+            // shared across all destinations: the autoclosure is evaluated at most
+            // once per log call and only if a destination actually needs the string
+            let lazyMessage = LazyMessage(message)
+            let destinations = queue.sync { self.destinations }
+            let f = stripParams(function: function)
+            for dest in destinations {
 
-            guard let queue = dest.queue else {
-                continue
-            }
+                guard let queue = dest.queue else {
+                    continue
+                }
 
-            resolvedMessage = resolvedMessage == nil && dest.hasMessageFilters() ? "\(message())" : resolvedMessage
-            if dest.shouldLevelBeLogged(level, path: file, function: function, message: resolvedMessage) {
-                // try to convert msg object to String and put it on queue
-                let msgStr = resolvedMessage == nil ? "\(message())" : resolvedMessage!
-                let f = stripParams(function: function)
+                // the message is only resolved when a message filter inspects it
+                // or when it is about to be logged
+                let filterMessage = dest.hasMessageFilters() ? lazyMessage.value : nil
+                if dest.shouldLevelBeLogged(level, path: file, function: function, message: filterMessage) {
+                    // try to convert msg object to String and put it on queue
+                    let msgStr = lazyMessage.value
 
-                if dest.asynchronously {
-                    queue.async {
-                        _ = dest.send(level, msg: msgStr, thread: thread, file: file, function: f, line: line, context: context)
-                    }
-                } else {
-                    queue.sync {
-                        _ = dest.send(level, msg: msgStr, thread: thread, file: file, function: f, line: line, context: context)
+                    if dest.asynchronously {
+                        queue.async {
+                            _ = dest.send(level, msg: msgStr, thread: thread, file: file, function: f, line: line, context: context)
+                        }
+                    } else {
+                        queue.sync {
+                            _ = dest.send(level, msg: msgStr, thread: thread, file: file, function: f, line: line, context: context)
+                        }
                     }
                 }
             }
@@ -242,6 +250,25 @@ open class SwiftyBeaver {
         }
         f += "()"
         return f
+    }
+
+    /// Shared lazily-resolved message of a single dispatch_send call.
+    /// The wrapped autoclosure runs at most once, on the first access,
+    /// so all destinations of one log call see the exact same string.
+    final class LazyMessage {
+        private var resolved: String?
+        private let resolve: () -> Any
+
+        init(_ resolve: @escaping () -> Any) {
+            self.resolve = resolve
+        }
+
+        var value: String {
+            if resolved == nil {
+                resolved = "\(resolve())"
+            }
+            return resolved!
+        }
     }
 }
 
